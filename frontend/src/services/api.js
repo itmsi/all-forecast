@@ -123,5 +123,88 @@ export const healthCheck = async () => {
   return response.data;
 };
 
+// ============================================
+// BATCH FORECAST ENDPOINTS
+// ============================================
+
+/**
+ * Submit batch forecast with auto-partitioning
+ * @param {File} file - CSV file
+ * @param {Object} config - Forecast configuration
+ * @param {string} partitionStrategy - 'site' or 'auto'
+ * @param {number} maxRowsPerPartition - Max rows per partition (default: 2000)
+ * @param {number} maxExecutionTime - Max execution time per partition in seconds (default: 300)
+ * @returns {Promise}
+ */
+export const submitBatchForecast = async (file, config, partitionStrategy = 'site', maxRowsPerPartition = 2000, maxExecutionTime = 300) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('config', JSON.stringify(config));
+  formData.append('partition_strategy', partitionStrategy);
+  formData.append('max_rows_per_partition', maxRowsPerPartition);
+  formData.append('max_execution_time', maxExecutionTime);
+
+  const response = await api.post('/api/batch/submit', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data;
+};
+
+/**
+ * Get batch forecast status
+ * @param {string} batchId - Batch ID
+ * @returns {Promise}
+ */
+export const getBatchStatus = async (batchId) => {
+  const response = await api.get(`/api/batch/status/${batchId}`);
+  return response.data;
+};
+
+/**
+ * Download batch forecast result
+ * @param {string} batchId - Batch ID
+ */
+export const downloadBatchResult = async (batchId) => {
+  const response = await api.get(`/api/batch/download/${batchId}`, {
+    responseType: 'blob',
+  });
+
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `batch_forecast_${batchId}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+/**
+ * Cancel batch job
+ * @param {string} batchId - Batch ID
+ * @returns {Promise}
+ */
+export const cancelBatchJob = async (batchId) => {
+  const response = await api.post(`/api/batch/cancel/${batchId}`);
+  return response.data;
+};
+
+/**
+ * Get batch history
+ * @param {number} page - Page number
+ * @param {number} pageSize - Page size
+ * @returns {Promise}
+ */
+export const getBatchHistory = async (page = 1, pageSize = 20) => {
+  const response = await api.get('/api/batch/history', {
+    params: { page, page_size: pageSize }
+  });
+  return response.data;
+};
+
+
 export default api;
 

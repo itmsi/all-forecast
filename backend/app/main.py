@@ -12,6 +12,7 @@ import os
 from app.database import init_db, engine
 from app.models import Base
 from app.api.forecast import router as forecast_router
+from app.api.batch import router as batch_router
 from app.schemas import HealthCheckResponse, ErrorResponse
 from app import __version__
 
@@ -120,6 +121,7 @@ async def root():
 
 # Include routers
 app.include_router(forecast_router)
+app.include_router(batch_router)
 
 
 if __name__ == "__main__":

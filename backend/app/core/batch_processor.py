@@ -196,14 +196,25 @@ class BatchProcessor:
     def _get_partition_metadata(self, df: pd.DataFrame, partition_id: int) -> Dict:
         """Extract metadata dari partition"""
         
+        # Get date range and convert to JSON-serializable format
+        date_range = None
+        if 'date' in df.columns:
+            min_date = df['date'].min()
+            max_date = df['date'].max()
+            # Convert pandas Timestamp to string for JSON serialization
+            date_range = (
+                min_date.isoformat() if hasattr(min_date, 'isoformat') else str(min_date),
+                max_date.isoformat() if hasattr(max_date, 'isoformat') else str(max_date)
+            )
+        
         return {
             'partition_id': partition_id,
             'rows': len(df),
             'sites': df['site_code'].unique().tolist(),
             'site_count': df['site_code'].nunique(),
             'partnumbers_count': df['partnumber'].nunique(),
-            'date_range': (df['date'].min(), df['date'].max()) if 'date' in df.columns else None,
-            'demand_sum': df['demand_qty'].sum() if 'demand_qty' in df.columns else 0
+            'date_range': date_range,
+            'demand_sum': int(df['demand_qty'].sum()) if 'demand_qty' in df.columns else 0
         }
     
     def save_partition(self, partition: Dict, output_dir: str) -> str:

@@ -8,7 +8,13 @@ import {
   Space, 
   Divider,
   Typography,
-  Popconfirm 
+  Popconfirm,
+  Switch,
+  Alert,
+  Tooltip,
+  Descriptions,
+  Tag,
+  Progress 
 } from 'antd';
 import { 
   UploadOutlined, 
@@ -20,7 +26,17 @@ import {
 import ConfigPanel from '../components/ConfigPanel';
 import StatusMonitor from '../components/StatusMonitor';
 import MetricsCard from '../components/MetricsCard';
-import { submitForecast, getForecastStatus, downloadForecastResult, cancelForecastJob } from '../services/api';
+import PartitionProgress from '../components/PartitionProgress';
+import { 
+  submitForecast, 
+  getForecastStatus, 
+  downloadForecastResult, 
+  cancelForecastJob,
+  submitBatchForecast,
+  getBatchStatus,
+  downloadBatchResult,
+  cancelBatchJob 
+} from '../services/api';
 
 const { Dragger } = Upload;
 const { Title, Paragraph } = Typography;
@@ -35,9 +51,19 @@ const Dashboard = () => {
     random_state: 42,
     dayfirst: true
   });
+  
+  // Single forecast states
   const [taskId, setTaskId] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [status, setStatus] = useState(null);
+  
+  // Batch forecast states
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchId, setBatchId] = useState(null);
+  const [batchStatus, setBatchStatus] = useState(null);
+  const [batchAnalysis, setBatchAnalysis] = useState(null);
+  
+  // Common states
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
 
@@ -76,8 +102,9 @@ const Dashboard = () => {
     }
 
     setLoading(true);
+    
     try {
-      // Prepare config (convert null site_codes to empty array for API)
+      // Prepare config
       const apiConfig = {
         ...config,
         forecast_site_codes: config.forecast_site_codes?.length > 0 
@@ -85,16 +112,42 @@ const Dashboard = () => {
           : null
       };
 
-      const response = await submitForecast(file, apiConfig);
-      
-      setTaskId(response.task_id);
-      setJobId(response.job_id);
-      setStatus(null);
-      
-      message.success('Forecast job berhasil disubmit!');
-      
-      // Start polling status
-      startPolling(response.task_id);
+      if (batchMode) {
+        // BATCH MODE: Auto-partition & parallel processing
+        const response = await submitBatchForecast(
+          file, 
+          apiConfig,
+          'site',  // partition by site
+          2000,    // max 2000 rows per partition
+          300      // 5 min timeout per partition
+        );
+        
+        setBatchId(response.batch_id);
+        setBatchAnalysis(response.analysis);
+        setBatchStatus(null);
+        
+        message.success(
+          `Batch forecast disubmit! ${response.analysis.total_partitions} partitions. ` +
+          `Estimasi: ${response.analysis.estimated_time_minutes} menit`,
+          5
+        );
+        
+        // Start polling batch status
+        startBatchPolling(response.batch_id);
+        
+      } else {
+        // NORMAL MODE: Single forecast job
+        const response = await submitForecast(file, apiConfig);
+        
+        setTaskId(response.task_id);
+        setJobId(response.job_id);
+        setStatus(null);
+        
+        message.success('Forecast job berhasil disubmit!');
+        
+        // Start polling status
+        startPolling(response.task_id);
+      }
     } catch (error) {
       message.error(`Gagal submit forecast: ${error.response?.data?.detail || error.message}`);
       setLoading(false);
@@ -130,37 +183,83 @@ const Dashboard = () => {
     }, 2000); // Poll every 2 seconds
   };
 
-  const handleDownload = async () => {
-    if (!jobId) {
-      message.error('Tidak ada hasil untuk didownload');
-      return;
-    }
+  const startBatchPolling = (bid) => {
+    setPolling(true);
+    
+    const interval = setInterval(async () => {
+      try {
+        const statusData = await getBatchStatus(bid);
+        setBatchStatus(statusData);
 
+        if (statusData.status === 'COMPLETED') {
+          clearInterval(interval);
+          setLoading(false);
+          setPolling(false);
+          message.success(
+            `Batch forecast selesai! ${statusData.completed_partitions}/${statusData.total_partitions} partitions berhasil.`,
+            5
+          );
+        } else if (statusData.status === 'FAILED' || statusData.status === 'ROLLED_BACK') {
+          clearInterval(interval);
+          setLoading(false);
+          setPolling(false);
+          message.error(
+            `Batch forecast gagal. ${statusData.failed_partitions} partition(s) error. Lihat detail di bawah.`,
+            7
+          );
+        } else if (statusData.status === 'CANCELLED') {
+          clearInterval(interval);
+          setLoading(false);
+          setPolling(false);
+          message.warning('Batch forecast dibatalkan');
+        }
+      } catch (error) {
+        console.error('Error polling batch status:', error);
+        clearInterval(interval);
+        setLoading(false);
+        setPolling(false);
+        message.error('Gagal mengambil batch status');
+      }
+    }, 3000); // Poll every 3 seconds (batch takes longer)
+  };
+
+  const handleDownload = async () => {
     try {
-      await downloadForecastResult(jobId);
-      message.success('Download dimulai');
+      if (batchMode && batchId) {
+        await downloadBatchResult(batchId);
+        message.success('Download batch result dimulai');
+      } else if (jobId) {
+        await downloadForecastResult(jobId);
+        message.success('Download dimulai');
+      } else {
+        message.error('Tidak ada hasil untuk didownload');
+      }
     } catch (error) {
       message.error(`Download gagal: ${error.response?.data?.detail || error.message}`);
     }
   };
 
   const handleCancel = async () => {
-    if (!jobId) {
-      message.error('Tidak ada job untuk dibatalkan');
-      return;
-    }
-
     try {
-      await cancelForecastJob(jobId);
-      message.warning('Job dibatalkan');
-      
-      // Refresh status
-      const statusData = await getForecastStatus(taskId);
-      setStatus(statusData);
-      setLoading(false);
-      setPolling(false);
+      if (batchMode && batchId) {
+        await cancelBatchJob(batchId);
+        message.warning('Batch job dibatalkan');
+        const statusData = await getBatchStatus(batchId);
+        setBatchStatus(statusData);
+        setLoading(false);
+        setPolling(false);
+      } else if (jobId) {
+        await cancelForecastJob(jobId);
+        message.warning('Job dibatalkan');
+        const statusData = await getForecastStatus(taskId);
+        setStatus(statusData);
+        setLoading(false);
+        setPolling(false);
+      } else {
+        message.error('Tidak ada job untuk dibatalkan');
+      }
     } catch (error) {
-      message.error(`Gagal membatalkan job: ${error.response?.data?.detail || error.message}`);
+      message.error(`Gagal membatalkan: ${error.response?.data?.detail || error.message}`);
     }
   };
 
@@ -169,6 +268,9 @@ const Dashboard = () => {
     setTaskId(null);
     setJobId(null);
     setStatus(null);
+    setBatchId(null);
+    setBatchStatus(null);
+    setBatchAnalysis(null);
     setLoading(false);
     setPolling(false);
   };
@@ -201,6 +303,67 @@ const Dashboard = () => {
       {/* Config Section */}
       <Card title="2. Konfigurasi Forecast" style={{ marginBottom: 16 }}>
         <ConfigPanel config={config} onChange={setConfig} />
+        
+        <Divider />
+        
+        {/* Batch Mode Toggle */}
+        <div style={{ marginTop: 16 }}>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <strong>Auto Batch Processing (Recommended untuk data besar)</strong>
+                <br />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Otomatis partisi data & process secara bertahap untuk avoid timeout
+                </Typography.Text>
+              </div>
+              <Tooltip title="Enable untuk data >5000 rows atau >10 sites">
+                <Switch 
+                  checked={batchMode} 
+                  onChange={setBatchMode}
+                  checkedChildren="Batch ON"
+                  unCheckedChildren="Batch OFF"
+                />
+              </Tooltip>
+            </div>
+            
+            {batchMode && (
+              <Alert
+                message="Batch Mode Active"
+                description={
+                  <div>
+                    <p>✅ Data akan di-partition otomatis per site (max 2000 rows/partition)</p>
+                    <p>✅ Progress ditampilkan per partition</p>
+                    <p>✅ Auto rollback jika ada partition yang fail</p>
+                    <p>✅ Timeout protection: 5 menit per partition</p>
+                    <p>⚠️  <strong>Note:</strong> Site Codes filter akan diabaikan (process all sites)</p>
+                  </div>
+                }
+                type="info"
+                showIcon
+                style={{ marginTop: 8 }}
+              />
+            )}
+            
+            {batchAnalysis && (
+              <Alert
+                message="Batch Analysis"
+                description={
+                  <div>
+                    <p>📊 Total rows: {batchAnalysis.total_rows?.toLocaleString()}</p>
+                    <p>🏢 Sites: {batchAnalysis.unique_sites}</p>
+                    <p>📦 Partnumbers: {batchAnalysis.unique_partnumbers?.toLocaleString()}</p>
+                    <p>🔢 Partitions: {batchAnalysis.total_partitions}</p>
+                    <p>⏱️  Estimated time: {batchAnalysis.estimated_time_minutes} min ({batchAnalysis.speedup_factor}x speedup)</p>
+                  </div>
+                }
+                type="success"
+                showIcon
+                style={{ marginTop: 8 }}
+              />
+            )}
+          </Space>
+        </div>
       </Card>
 
       {/* Action Buttons */}
@@ -217,10 +380,14 @@ const Dashboard = () => {
             {loading ? 'Processing...' : 'Jalankan Forecast'}
           </Button>
 
-          {status?.status === 'PROCESSING' && (
+          {(status?.status === 'PROCESSING' || batchStatus?.status === 'PROCESSING') && (
             <Popconfirm
-              title="Stop Forecast Job?"
-              description="Job akan dihentikan dan tidak bisa dilanjutkan. Yakin?"
+              title={batchMode ? "Stop Batch Forecast?" : "Stop Forecast Job?"}
+              description={
+                batchMode 
+                  ? "Semua partitions akan dihentikan dan tidak bisa dilanjutkan. Yakin?"
+                  : "Job akan dihentikan dan tidak bisa dilanjutkan. Yakin?"
+              }
               onConfirm={handleCancel}
               okText="Ya, Stop"
               cancelText="Batal"
@@ -232,12 +399,12 @@ const Dashboard = () => {
                 icon={<StopOutlined />}
                 loading={false}
               >
-                Stop Job
+                {batchMode ? 'Stop Batch' : 'Stop Job'}
               </Button>
             </Popconfirm>
           )}
 
-          {status?.status === 'COMPLETED' && (
+          {(status?.status === 'COMPLETED' || batchStatus?.status === 'COMPLETED') && (
             <Button
               type="default"
               size="large"
@@ -248,7 +415,7 @@ const Dashboard = () => {
             </Button>
           )}
 
-          {(status || taskId) && (
+          {(status || taskId || batchStatus || batchId) && (
             <Button onClick={handleReset}>
               Reset
             </Button>
@@ -256,8 +423,52 @@ const Dashboard = () => {
         </Space>
       </Card>
 
-      {/* Status Monitor */}
-      {status && <StatusMonitor status={status} />}
+      {/* Single Forecast Status Monitor */}
+      {!batchMode && status && <StatusMonitor status={status} />}
+
+      {/* Batch Forecast Status */}
+      {batchMode && batchStatus && (
+        <Card title="Batch Forecast Status" style={{ marginBottom: 16 }}>
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="Batch ID">{batchStatus.batch_id?.substring(0, 8)}...</Descriptions.Item>
+            <Descriptions.Item label="Status">
+              <Tag color={
+                batchStatus.status === 'COMPLETED' ? 'success' :
+                batchStatus.status === 'FAILED' || batchStatus.status === 'ROLLED_BACK' ? 'error' :
+                batchStatus.status === 'PROCESSING' ? 'processing' : 'default'
+              }>
+                {batchStatus.status}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Progress">{batchStatus.progress}%</Descriptions.Item>
+            <Descriptions.Item label="Partitions">
+              {batchStatus.completed_partitions}/{batchStatus.total_partitions} completed
+            </Descriptions.Item>
+          </Descriptions>
+          
+          <Progress 
+            percent={batchStatus.progress} 
+            status={
+              batchStatus.status === 'FAILED' || batchStatus.status === 'ROLLED_BACK' ? 'exception' :
+              batchStatus.status === 'COMPLETED' ? 'success' : 'active'
+            }
+            style={{ marginTop: 16 }}
+          />
+          
+          {batchStatus.error_message && (
+            <Alert
+              message="Error"
+              description={batchStatus.error_message}
+              type="error"
+              showIcon
+              style={{ marginTop: 16 }}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* Partition Progress Detail */}
+      {batchMode && batchStatus && <PartitionProgress batchStatus={batchStatus} />}
 
       {/* Metrics */}
       {status?.metrics && <MetricsCard metrics={status.metrics} />}

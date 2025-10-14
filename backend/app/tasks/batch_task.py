@@ -123,9 +123,27 @@ def run_batch_forecast_task(self, batch_id: str):
                 print(f"  Rows: {metadata['rows']}, Sites: {metadata['site_count']}, " 
                       f"Parts: {metadata['partnumbers_count']}")
                 
-                self.update_state(state='PROGRESS', 
-                                meta={'progress': progress, 
-                                      'status': f'Partition {partition_id+1}/{len(partitions)}'})
+                # Update state dengan detail partition info
+                self.update_state(
+                    state='PROGRESS',
+                    meta={
+                        'progress': progress,
+                        'status': f'Partition {partition_id+1}/{len(partitions)}',
+                        'current_partition': {
+                            'id': partition_id,
+                            'rows': metadata['rows'],
+                            'sites': metadata['sites'],
+                            'partnumbers': metadata['partnumbers_count'],
+                            'status': 'PROCESSING'
+                        },
+                        'partition_progress': [
+                            {
+                                'partition_id': p['partition_id'],
+                                'status': p.get('status', 'PENDING')
+                            } for p in partition_results
+                        ]
+                    }
+                )
                 
                 # Process partition with timeout monitoring
                 start_time = time.time()
