@@ -166,6 +166,7 @@ async def get_batch_status(
         "total_partitions": batch_job.total_partitions,
         "completed_partitions": batch_job.completed_partitions,
         "failed_partitions": batch_job.failed_partitions,
+        "skipped_partitions": getattr(batch_job, 'skipped_partitions', 0),  # Support old records without this field
         "partition_results": batch_job.partition_results,
         "created_at": batch_job.created_at.isoformat() if batch_job.created_at else None,
         "started_at": batch_job.started_at.isoformat() if batch_job.started_at else None,

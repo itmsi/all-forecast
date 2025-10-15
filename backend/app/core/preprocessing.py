@@ -194,9 +194,27 @@ def parse_dates_flexible(date_series, dayfirst=True):
 def preprocess_data(df, group_cols=('partnumber', 'site_code')):
     """Complete preprocessing pipeline"""
     
-    # Aggregate daily
+    # Check for duplicates before aggregation
+    original_rows = len(df)
+    dup_mask = df.duplicated(subset=['partnumber', 'site_code', 'date'], keep=False)
+    dup_count = dup_mask.sum()
+    
+    if dup_count > 0:
+        print(f"ℹ️  Detected {dup_count} duplicate rows (same date+partnumber+site_code)")
+        print(f"   These will be aggregated by summing demand_qty")
+        # Show sample duplicates
+        if dup_count <= 10:
+            sample_dups = df[dup_mask].head(10)
+            for idx, row in sample_dups.iterrows():
+                print(f"   - {row['date']} | {row['partnumber']} | {row['site_code']} | demand={row['demand_qty']}")
+    
+    # Aggregate daily (auto-handles duplicates by summing demand_qty)
     df = (df.groupby(['partnumber', 'site_code', 'date'], as_index=False)
           .agg(demand_qty=('demand_qty', 'sum')))
+    
+    aggregated_rows = len(df)
+    if original_rows != aggregated_rows:
+        print(f"✅ Aggregated {original_rows} rows → {aggregated_rows} rows (removed {original_rows - aggregated_rows} duplicates)")
     
     # Complete calendar
     df = complete_calendar_daily(df, group_cols=group_cols, target='demand_qty')

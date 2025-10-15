@@ -173,12 +173,41 @@ def run_batch_forecast_task(self, batch_id: str):
                 if time.time() - start_time > max_exec_time:
                     raise TimeoutError(f"Partition {partition_id} exceeded max execution time")
                 
-                # Generate forecast
-                forecast_df = forecaster.forecast(
-                    df_processed,
-                    start_date=batch_job.config.get('forecast_start_date'),
-                    start_offset_days=batch_job.config.get('forecast_start_offset_days', 1)
-                )
+                # Generate forecast (with graceful handling for empty data after filtering)
+                try:
+                    forecast_df = forecaster.forecast(
+                        df_processed,
+                        start_date=batch_job.config.get('forecast_start_date'),
+                        start_offset_days=batch_job.config.get('forecast_start_offset_days', 1)
+                    )
+                except ValueError as e:
+                    # Handle case: data filtered by forecast_site_codes results in empty dataset
+                    if "No data for specified forecast_site_codes" in str(e):
+                        print(f"  ⏭️  SKIPPED: Partition {partition_id} - Sites in this partition not in forecast_site_codes filter")
+                        print(f"     Partition sites: {metadata['sites']}")
+                        if batch_job.config.get('forecast_site_codes'):
+                            print(f"     Filter sites: {batch_job.config.get('forecast_site_codes')}")
+                        
+                        # Mark partition as skipped (not an error, just filtered out)
+                        partition_results.append({
+                            'partition_id': partition_id,
+                            'status': 'SKIPPED',
+                            'reason': 'Sites not in forecast_site_codes filter',
+                            'metadata': metadata,
+                            'partition_sites': metadata['sites'],
+                            'filter_sites': batch_job.config.get('forecast_site_codes'),
+                            'execution_time': round(time.time() - start_time, 2)
+                        })
+                        
+                        # Increment skipped counter
+                        batch_job.skipped_partitions += 1
+                        db.commit()
+                        
+                        # Continue to next partition (not counted as failed)
+                        continue
+                    else:
+                        # Other ValueError - treat as error
+                        raise
                 
                 # Save partition result
                 output_file = f"outputs/{batch_id}/partition_{partition_id:03d}_forecast.csv"
@@ -229,15 +258,29 @@ def run_batch_forecast_task(self, batch_id: str):
                 # Rollback: Stop jika ada failure
                 raise Exception(f"Partition {partition_id} failed - Rolling back batch: {str(e)}")
         
-        # All partitions successful - combine results
-        print(f"[Batch {batch_id}] All partitions completed. Combining results...")
+        # All partitions completed - combine results (skip SKIPPED partitions)
+        skipped_count = sum(1 for p in partition_results if p.get('status') == 'SKIPPED')
+        success_count = sum(1 for p in partition_results if p.get('status') == 'COMPLETED')
+        
+        print(f"[Batch {batch_id}] Processing completed:")
+        print(f"  Successful: {success_count}")
+        print(f"  Skipped: {skipped_count}")
+        print(f"  Failed: {batch_job.failed_partitions}")
+        
+        if success_count == 0:
+            raise Exception("No partitions produced forecasts. Check forecast_site_codes filter.")
+        
+        print(f"[Batch {batch_id}] Combining {success_count} successful partitions...")
         batch_job.progress = 90
         db.commit()
         
-        # Combine all forecast results
-        combined_df = pd.concat([pd.read_csv(f) for f in partition_files], ignore_index=True)
-        combined_output = f"outputs/{batch_id}/combined_forecast.csv"
-        combined_path = safe_save_csv(combined_df, combined_output)
+        # Combine only successful partition results (skip SKIPPED ones)
+        if partition_files:
+            combined_df = pd.concat([pd.read_csv(f) for f in partition_files], ignore_index=True)
+            combined_output = f"outputs/{batch_id}/combined_forecast.csv"
+            combined_path = safe_save_csv(combined_df, combined_output)
+        else:
+            raise Exception("No forecast files to combine")
         
         # Update batch job
         batch_job.status = 'COMPLETED'
@@ -250,6 +293,9 @@ def run_batch_forecast_task(self, batch_id: str):
         
         print(f"[Batch {batch_id}] Batch forecast completed successfully!")
         print(f"  Total partitions: {len(partitions)}")
+        print(f"  Completed: {batch_job.completed_partitions}")
+        print(f"  Skipped: {batch_job.skipped_partitions}")
+        print(f"  Failed: {batch_job.failed_partitions}")
         print(f"  Combined output: {combined_path}")
         
         return {
@@ -257,6 +303,7 @@ def run_batch_forecast_task(self, batch_id: str):
             'batch_id': batch_id,
             'total_partitions': len(partitions),
             'completed': batch_job.completed_partitions,
+            'skipped': batch_job.skipped_partitions,
             'failed': batch_job.failed_partitions,
             'combined_output': combined_path,
             'partition_results': partition_results

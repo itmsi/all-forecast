@@ -112,6 +112,7 @@ class BatchJob(Base):
     progress = Column(Integer, default=0)  # 0-100
     completed_partitions = Column(Integer, default=0)
     failed_partitions = Column(Integer, default=0)
+    skipped_partitions = Column(Integer, default=0)  # Partitions filtered out by forecast_site_codes
     
     # Results
     output_files = Column(JSON, nullable=True)  # List of output file paths
@@ -137,16 +138,20 @@ class BatchJob(Base):
         return {
             'id': self.id,
             'batch_id': self.batch_id,
+            'batch_job_id': self.id,  # Alias for frontend consistency
             'original_filename': self.original_filename,
             'status': self.status,
             'progress': self.progress,
+            'partition_strategy': self.partition_strategy if self.partition_strategy else 'site',
             'total_partitions': self.total_partitions,
-            'completed_partitions': self.completed_partitions,
-            'failed_partitions': self.failed_partitions,
+            'completed_partitions': self.completed_partitions if self.completed_partitions else 0,
+            'failed_partitions': self.failed_partitions if self.failed_partitions else 0,
+            'skipped_partitions': getattr(self, 'skipped_partitions', 0),  # Backward compatible
             'config': self.config,
             'partition_results': self.partition_results,
             'metrics': self.metrics,
             'error_message': self.error_message,
+            'combined_output': self.combined_output,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
