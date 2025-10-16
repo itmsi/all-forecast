@@ -93,6 +93,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=https://api-forecast.motorsights.com
     container_name: forecast_frontend
     ports:
       - "9572:80"
