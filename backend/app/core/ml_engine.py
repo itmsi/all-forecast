@@ -70,32 +70,18 @@ class MLForecaster:
         self.metrics_history = {}
     
     def _build_candidate_models(self):
-        """Build candidate models"""
+        """Build candidate models - Simplified to Ridge_log only (as per latest notebook)"""
         preprocess_sparse = ColumnTransformer(
             transformers=[('cat', make_ohe(dense=False), self.feature_cols_cat)],
             remainder='passthrough'
         )
-        preprocess_dense = ColumnTransformer(
-            transformers=[('cat', make_ohe(dense=True), self.feature_cols_cat)],
-            remainder='passthrough'
-        )
         
         candidates = {
-            # Fast models only untuk handle large datasets (2000+ unique values)
-            "GBR_log": Pipeline([
-                ("prep", preprocess_dense),
-                ("reg", TTR(
-                    regressor=GradientBoostingRegressor(
-                        n_estimators=100, max_depth=5, min_samples_leaf=5,
-                        random_state=self.random_state
-                    ),
-                    func=np.log1p, inverse_func=np.expm1
-                ))
-            ]),
+            # Using Ridge_log only as per forecast11_ridge_only.ipynb
             "Ridge_log": Pipeline([
-                ("prep", preprocess_dense),
+                ("prep", preprocess_sparse),
                 ("reg", TTR(
-                    regressor=Ridge(alpha=1.0),
+                    regressor=Ridge(alpha=1.0, random_state=self.random_state) if 'random_state' in Ridge().get_params() else Ridge(alpha=1.0),
                     func=np.log1p, inverse_func=np.expm1
                 ))
             ]),
@@ -104,7 +90,7 @@ class MLForecaster:
         return candidates
     
     def train_and_select_model(self, df_fe):
-        """Train all candidate models and select best by MAPE%"""
+        """Train Ridge_log model (simplified from notebook)"""
         
         # Update feature columns dynamically from actual data
         from .preprocessing import get_feature_columns
@@ -136,39 +122,39 @@ class MLForecaster:
         y_train = train['demand_qty'].astype(float).values
         y_valid = valid['demand_qty'].astype(float).values
         
-        # Build and train candidates
+        # Build and train Ridge_log model
         candidates = self._build_candidate_models()
         results = {}
         fitted = {}
         
-        print("Training models...")
-        for name, est in candidates.items():
-            print(f"  Training {name}...")
-            est.fit(X_train, y_train)
-            y_pred = est.predict(X_valid)
-            
-            # Raw metrics
-            m_raw = metrics(y_valid, y_pred, as_percent=True)
-            
-            # Rounded metrics
-            m_rnd = eval_with_rounding(y_valid, y_pred, thr=self.zero_threshold)
-            
-            results[name] = {
-                'raw': m_raw,
-                'rounded': m_rnd
-            }
-            fitted[name] = est
-            
-            print(f"    MAPE% (rounded): {m_rnd['MAPE%']:.4f}")
+        print("Training Ridge_log model...")
+        name = "Ridge_log"
+        est = candidates[name]
         
-        # Select best by MAPE% (rounded)
-        best_name = min(results, key=lambda k: results[k]['rounded']['MAPE%'])
-        self.best_model = fitted[best_name]
-        self.best_model_name = best_name
+        est.fit(X_train, y_train)
+        y_pred = est.predict(X_valid)
+        
+        # Raw metrics
+        m_raw = metrics(y_valid, y_pred, as_percent=True)
+        
+        # Rounded metrics
+        m_rnd = eval_with_rounding(y_valid, y_pred, thr=self.zero_threshold)
+        
+        results[name] = {
+            'raw': m_raw,
+            'rounded': m_rnd
+        }
+        fitted[name] = est
+        
+        print(f"    MAPE% (rounded): {m_rnd['MAPE%']:.4f}")
+        
+        # Set as best model
+        self.best_model = fitted[name]
+        self.best_model_name = name
         self.metrics_history = results
         
-        print(f"\nBest model: {best_name}")
-        print(f"MAPE% (rounded): {results[best_name]['rounded']['MAPE%']:.4f}")
+        print(f"\nModel trained: {name}")
+        print(f"MAPE% (rounded): {results[name]['rounded']['MAPE%']:.4f}")
         
         return self.best_model
     

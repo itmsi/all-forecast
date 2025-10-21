@@ -4,13 +4,13 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:14-alpine
-    container_name: forecast_postgres
+    container_name: forecast_postgres_local
     environment:
       POSTGRES_DB: forecast_db
       POSTGRES_USER: forecast_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-forecast_pass_change_this}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-forecast_pass_local_2024}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_local:/var/lib/postgresql/data
     ports:
       - "9573:5432"
     healthcheck:
@@ -19,15 +19,15 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - forecast_network
+      - forecast_network_local
 
   # Redis (Message Broker & Cache)
   redis:
     image: redis:7-alpine
-    container_name: forecast_redis
+    container_name: forecast_redis_local
     command: redis-server --appendonly yes
     volumes:
-      - redis_data:/data
+      - redis_data_local:/data
     ports:
       - "9574:6379"
     healthcheck:
@@ -36,21 +36,22 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - forecast_network
+      - forecast_network_local
 
   # FastAPI Backend
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: forecast_backend
+    container_name: forecast_backend_local
     ports:
       - "9571:8000"
     environment:
-      DATABASE_URL: postgresql://forecast_user:${DB_PASSWORD:-forecast_pass_change_this}@postgres:5432/forecast_db
+      DATABASE_URL: postgresql://forecast_user:${DB_PASSWORD:-forecast_pass_local_2024}@postgres:5432/forecast_db
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ENVIRONMENT: local
     volumes:
       - ./backend/models:/app/models
       - ./backend/uploads:/app/uploads
@@ -63,19 +64,20 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     restart: unless-stopped
     networks:
-      - forecast_network
+      - forecast_network_local
 
   # Celery Worker
   celery_worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: forecast_celery_worker
+    container_name: forecast_celery_worker_local
     environment:
-      DATABASE_URL: postgresql://forecast_user:${DB_PASSWORD:-forecast_pass_change_this}@postgres:5432/forecast_db
+      DATABASE_URL: postgresql://forecast_user:${DB_PASSWORD:-forecast_pass_local_2024}@postgres:5432/forecast_db
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ENVIRONMENT: local
     volumes:
       - ./backend/models:/app/models
       - ./backend/uploads:/app/uploads
@@ -86,7 +88,7 @@ services:
     command: celery -A app.celery_app worker --loglevel=info --concurrency=4
     restart: unless-stopped
     networks:
-      - forecast_network
+      - forecast_network_local
 
   # React Frontend
   frontend:
@@ -95,22 +97,21 @@ services:
       dockerfile: Dockerfile
       args:
         - REACT_APP_API_URL=http://localhost:9571
-    container_name: forecast_frontend
+    container_name: forecast_frontend_local
     ports:
       - "9572:80"
     depends_on:
       - backend
     restart: unless-stopped
     networks:
-      - forecast_network
+      - forecast_network_local
 
 volumes:
-  postgres_data:
+  postgres_data_local:
     driver: local
-  redis_data:
+  redis_data_local:
     driver: local
 
 networks:
-  forecast_network:
+  forecast_network_local:
     driver: bridge
-
