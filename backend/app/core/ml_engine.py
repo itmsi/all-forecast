@@ -225,13 +225,13 @@ class MLForecaster:
         raw_model = np.maximum(0, self.best_model.predict(Xf))
         raw_thr = np.where(raw_model < self.zero_threshold, 0, raw_model)
         
-        combos['forecast_qty_raw_model'] = raw_model
-        combos['forecast_qty_raw'] = raw_thr
-        combos['forecast_qty'] = round_series(raw_thr, self.rounding_mode)
+        combos['yhat_raw'] = raw_model
+        combos['yhat_thr'] = raw_thr
+        combos['yhat_round'] = round_series(raw_thr, self.rounding_mode)
         combos['date'] = fdate
         
-        return combos[['date', 'partnumber', 'site_code',
-                      'forecast_qty', 'forecast_qty_raw', 'forecast_qty_raw_model']]
+        return combos[['partnumber', 'site_code', 'date',
+                      'yhat_raw', 'yhat_thr', 'yhat_round']]
     
     def forecast(self, df_full, start_date=None, start_offset_days=1):
         """
@@ -279,7 +279,7 @@ class MLForecaster:
             tmp = self.one_day_forecast(history, df_sites, gap)
             history = pd.concat([
                 history,
-                tmp.rename(columns={'forecast_qty_raw': 'demand_qty'})
+                tmp.rename(columns={'yhat_thr': 'demand_qty'})
                    [['date', 'partnumber', 'site_code', 'demand_qty']]
             ], ignore_index=True)
             gap += pd.Timedelta(days=1)
@@ -296,7 +296,7 @@ class MLForecaster:
             # Feedback loop
             history = pd.concat([
                 history,
-                out.rename(columns={'forecast_qty_raw': 'demand_qty'})
+                out.rename(columns={'yhat_thr': 'demand_qty'})
                    [['date', 'partnumber', 'site_code', 'demand_qty']]
             ], ignore_index=True)
         
