@@ -12,6 +12,7 @@ class ForecastConfig(BaseModel):
     """Configuration for forecast job"""
     forecast_horizon: int = Field(default=7, ge=1, le=90, description="Number of days to forecast")
     forecast_site_codes: Optional[List[str]] = Field(default=None, description="List of site codes to forecast")
+    forecast_start_date: Optional[str] = Field(default=None, description="Start date for forecast in DD/MM/YYYY format")
     zero_threshold: float = Field(default=0.5, ge=0, le=10, description="Threshold below which forecast is set to 0")
     rounding_mode: str = Field(default='half_up', description="Rounding mode: half_up, round, ceil, floor")
     random_state: int = Field(default=42, description="Random state for reproducibility")
@@ -23,6 +24,17 @@ class ForecastConfig(BaseModel):
         if v not in allowed:
             raise ValueError(f"rounding_mode must be one of {allowed}")
         return v
+    
+    @validator('forecast_start_date')
+    def validate_forecast_start_date(cls, v):
+        if v is not None and v != '':
+            try:
+                from datetime import datetime
+                # Try to parse DD/MM/YYYY format
+                datetime.strptime(v, '%d/%m/%Y')
+            except ValueError:
+                raise ValueError("forecast_start_date must be in DD/MM/YYYY format")
+        return v if v != '' else None
 
 
 class ForecastSubmitRequest(BaseModel):

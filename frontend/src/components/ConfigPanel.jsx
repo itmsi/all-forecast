@@ -1,6 +1,7 @@
 // frontend/src/components/ConfigPanel.jsx
 import React from 'react';
-import { Form, InputNumber, Select, Input, Space, Tag } from 'antd';
+import { Form, InputNumber, Select, DatePicker } from 'antd';
+import dayjs from 'dayjs';
 
 const { Option } = Select;
 
@@ -11,6 +12,11 @@ const ConfigPanel = ({ config, onChange }) => {
 
   const handleSiteCodesChange = (tags) => {
     onChange({ ...config, forecast_site_codes: tags });
+  };
+
+  const handleDateChange = (date, dateString) => {
+    // Only set the date if it's not empty
+    onChange({ ...config, forecast_start_date: dateString || null });
   };
 
   return (
@@ -29,6 +35,20 @@ const ConfigPanel = ({ config, onChange }) => {
         </Form.Item>
 
         <Form.Item 
+          label="Forecast Start Date" 
+          help="Tanggal mulai forecast (format: DD/MM/YYYY). Kosongkan untuk menggunakan tanggal otomatis"
+        >
+          <DatePicker
+            format="DD/MM/YYYY"
+            placeholder="Pilih tanggal mulai forecast"
+            value={config.forecast_start_date ? dayjs(config.forecast_start_date, 'DD/MM/YYYY') : null}
+            onChange={handleDateChange}
+            style={{ width: '100%' }}
+            allowClear
+          />
+        </Form.Item>
+
+        <Form.Item 
           label="Site Codes" 
           help="Kosongkan untuk semua site, atau masukkan kode site terpisah koma (contoh: IEL-ST-KDI,IEL-MU-SFI)"
         >
@@ -40,30 +60,6 @@ const ConfigPanel = ({ config, onChange }) => {
             onChange={handleSiteCodesChange}
             tokenSeparators={[',']}
           />
-        </Form.Item>
-
-        <Form.Item label="Zero Threshold" help="Prediksi di bawah nilai ini akan diset ke 0">
-          <InputNumber
-            min={0}
-            max={10}
-            step={0.1}
-            value={config.zero_threshold}
-            onChange={(value) => handleChange('zero_threshold', value)}
-            style={{ width: '100%' }}
-          />
-        </Form.Item>
-
-        <Form.Item label="Rounding Mode" help="Mode pembulatan hasil forecast">
-          <Select
-            value={config.rounding_mode}
-            onChange={(value) => handleChange('rounding_mode', value)}
-            style={{ width: '100%' }}
-          >
-            <Option value="half_up">Half Up (0.5 → 1)</Option>
-            <Option value="round">Round (Standard)</Option>
-            <Option value="ceil">Ceiling (Selalu naik)</Option>
-            <Option value="floor">Floor (Selalu turun)</Option>
-          </Select>
         </Form.Item>
 
         <Form.Item label="Format Tanggal" help="Format parsing tanggal di CSV">

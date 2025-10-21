@@ -239,7 +239,7 @@ class MLForecaster:
         
         Args:
             df_full: Full historical data
-            start_date: Start date for forecast (None = auto from data)
+            start_date: Start date for forecast (None = auto from data, or DD/MM/YYYY string)
             start_offset_days: Offset days from last historical date
         
         Returns:
@@ -258,7 +258,16 @@ class MLForecaster:
         if start_date is None:
             start_date = max_hist + pd.Timedelta(days=start_offset_days)
         else:
-            start_date = pd.to_datetime(start_date)
+            # Handle DD/MM/YYYY format from frontend
+            if isinstance(start_date, str):
+                try:
+                    # Try DD/MM/YYYY format first
+                    start_date = pd.to_datetime(start_date, format='%d/%m/%Y')
+                except ValueError:
+                    # Fallback to pandas default parsing
+                    start_date = pd.to_datetime(start_date)
+            else:
+                start_date = pd.to_datetime(start_date)
         
         # Initialize history
         history = df_sites[df_sites['date'] <= start_date - pd.Timedelta(days=1)].copy() \

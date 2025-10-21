@@ -17,7 +17,6 @@ import {
   Progress 
 } from 'antd';
 import { 
-  UploadOutlined, 
   RocketOutlined, 
   DownloadOutlined,
   InboxOutlined,
@@ -46,6 +45,7 @@ const Dashboard = () => {
   const [config, setConfig] = useState({
     forecast_horizon: 7,
     forecast_site_codes: null,
+    forecast_start_date: null,
     zero_threshold: 0.5,
     rounding_mode: 'half_up',
     random_state: 42,
@@ -109,7 +109,8 @@ const Dashboard = () => {
         ...config,
         forecast_site_codes: config.forecast_site_codes?.length > 0 
           ? config.forecast_site_codes 
-          : null
+          : null,
+        forecast_start_date: config.forecast_start_date || null
       };
 
       if (batchMode) {
