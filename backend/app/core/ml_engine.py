@@ -96,13 +96,8 @@ class MLForecaster:
         from .preprocessing import get_feature_columns
         self.feature_cols_cat, self.feature_cols_num = get_feature_columns(df_fe)
         
-        # Detect max lag untuk adaptive cutoff
-        lag_cols = [c for c in df_fe.columns if c.startswith('lag_')]
-        max_lag = max([int(c.split('_')[1]) for c in lag_cols], default=7) if lag_cols else 7
-        
-        # Split train/valid dengan adaptive cutoff
-        cutoff_days = max(max_lag * 2, 2 * self.forecast_horizon)
-        cutoff = df_fe['date'].max() - pd.Timedelta(days=cutoff_days)
+        # Split train/valid dengan cutoff yang sama persis dengan notebook
+        cutoff = df_fe['date'].max() - pd.Timedelta(days=max(28, 2 * self.forecast_horizon))
         
         train = df_fe[df_fe['date'] <= cutoff].copy()
         valid = df_fe[df_fe['date'] > cutoff].copy()
@@ -134,10 +129,10 @@ class MLForecaster:
         est.fit(X_train, y_train)
         y_pred = est.predict(X_valid)
         
-        # Raw metrics
-        m_raw = metrics(y_valid, y_pred, as_percent=True)
+        # Raw metrics - use same format as notebook
+        m_raw = metrics(y_valid, y_pred)                       # <— tanpa as_percent
         
-        # Rounded metrics
+        # Rounded metrics - use exact same formula as notebook
         m_rnd = eval_with_rounding(y_valid, y_pred, thr=self.zero_threshold)
         
         results[name] = {
@@ -220,14 +215,16 @@ class MLForecaster:
             if c in combos:
                 combos[c] = combos[c].fillna(0)
         
-        # Predict
-        Xf = pd.concat([combos[self.feature_cols_cat], combos[self.feature_cols_num]], axis=1)
-        raw_model = np.maximum(0, self.best_model.predict(Xf))
-        raw_thr = np.where(raw_model < self.zero_threshold, 0, raw_model)
+        # Predict - exact same logic as notebook
+        Xf = pd.concat([combos[['partnumber','site_code']],
+                        combos[['year','month','day','dayofweek','weekofyear','is_month_start','is_month_end'] + lagroll_cols]], axis=1)
+        raw_model = np.maximum(0, self.best_model.predict(Xf))              # raw >= 0
+        raw_thr   = np.where(raw_model < self.zero_threshold, 0, raw_model)     # threshold to zero
+        yhat      = np.floor(raw_thr + 0.5).astype(int)             # half-up rounding
         
         combos['yhat_raw'] = raw_model
         combos['yhat_thr'] = raw_thr
-        combos['yhat_round'] = round_series(raw_thr, self.rounding_mode)
+        combos['yhat_round'] = yhat
         combos['date'] = fdate
         
         return combos[['partnumber', 'site_code', 'date',
@@ -273,15 +270,12 @@ class MLForecaster:
         history = df_sites[df_sites['date'] <= start_date - pd.Timedelta(days=1)].copy() \
                   if start_date <= max_hist else df_sites.copy()
         
-        # Warm-up if there's a gap
+        # Warm-up if there's a gap - use yhat_round like notebook
         gap = history['date'].max() + pd.Timedelta(days=1)
         while gap < start_date:
             tmp = self.one_day_forecast(history, df_sites, gap)
-            history = pd.concat([
-                history,
-                tmp.rename(columns={'yhat_thr': 'demand_qty'})
-                   [['date', 'partnumber', 'site_code', 'demand_qty']]
-            ], ignore_index=True)
+            add_back = tmp.rename(columns={'yhat_round':'demand_qty'})[['partnumber','site_code','date','demand_qty']].copy()
+            history = pd.concat([history, add_back], ignore_index=True)
             gap += pd.Timedelta(days=1)
         
         # Main forecast loop
@@ -293,12 +287,9 @@ class MLForecaster:
             out = self.one_day_forecast(history, df_sites, d)
             forecasts.append(out)
             
-            # Feedback loop
-            history = pd.concat([
-                history,
-                out.rename(columns={'yhat_thr': 'demand_qty'})
-                   [['date', 'partnumber', 'site_code', 'demand_qty']]
-            ], ignore_index=True)
+            # append rounded predictions back as history for iterative features - exact same as notebook
+            add_back = out.rename(columns={'yhat_round':'demand_qty'})[['partnumber','site_code','date','demand_qty']].copy()
+            history = pd.concat([history, add_back], ignore_index=True)
         
         forecast_df = (pd.concat(forecasts, ignore_index=True)
                        .sort_values(['partnumber', 'site_code', 'date'])

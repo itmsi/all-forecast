@@ -98,7 +98,7 @@ def generate_exact_forecast_final():
     print("=== GENERATE FORECAST PERSIS SAMA DENGAN NOTEBOOK (FINAL) ===\n")
     
     # CONFIG (sama persis dengan notebook)
-    DATA_PATH = '/app/alldemand_augjul_new.csv'
+    DATA_PATH = '/Users/falaqmsi/Documents/GitHub/forecast/real_data/alldemand_augjul_new.csv'
     FORECAST_HORIZON = 7
     FORECAST_START_DATE = '2025-08-01'  # Fixed start date
     FORECAST_START_OFFSET_DAYS = 1
@@ -247,7 +247,7 @@ def generate_exact_forecast_final():
     print(f"   Zero values: {zeros}/{len(forecast_df)} ({zeros/len(forecast_df)*100:.1f}%)")
     
     # Save output
-    output_file = "/app/forecast_exact_final.csv"
+    output_file = "/Users/falaqmsi/Documents/GitHub/forecast/model_for_user/forecast_exact_final.csv"
     forecast_df.to_csv(output_file, index=False)
     print(f"   Output saved to: {output_file}")
     

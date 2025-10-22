@@ -39,27 +39,16 @@ def add_group_lags_rolls(df, group_cols, target_col='demand_qty',
 
 
 def complete_calendar_daily(df, group_cols=('partnumber', 'site_code'), target='demand_qty'):
-    """Complete missing dates with zero demand"""
+    """Complete missing dates with zero demand - exact same as notebook"""
     out = []
     for keys, g in df.groupby(list(group_cols), sort=False):
-        gd = (g.groupby('date', as_index=False)[target]
-              .sum()
-              .sort_values('date'))
-        
-        # Create complete date range
+        gd = (g.groupby('date', as_index=False)[target].sum().sort_values('date'))
         idx = pd.date_range(gd['date'].min(), gd['date'].max(), freq='D')
-        gg = gd.set_index('date').reindex(idx).rename_axis('date').reset_index()
-        gg[target] = pd.to_numeric(gg[target], errors='coerce').fillna(0)
-        
-        # Add group keys back
-        if not isinstance(keys, tuple):
-            keys = (keys,)
-        for c, v in zip(group_cols, keys):
-            gg[c] = v
-        
-        out.append(gg)
-    
-    return pd.concat(out, ignore_index=True)
+        gd = gd.set_index('date').reindex(idx).fillna(0.0).rename_axis('date').reset_index()
+        for col, val in zip(group_cols, (keys if isinstance(keys, tuple) else (keys,))):
+            gd[col] = val
+        out.append(gd[[*group_cols, 'date', target]])
+    return pd.concat(out, ignore_index=True) if out else df
 
 
 def load_and_normalize(file_path, dayfirst=True):
@@ -192,37 +181,13 @@ def parse_dates_flexible(date_series, dayfirst=True):
 
 
 def preprocess_data(df, group_cols=('partnumber', 'site_code')):
-    """Complete preprocessing pipeline"""
+    """Complete preprocessing pipeline - exact same as notebook"""
     
-    # Check for duplicates before aggregation
-    original_rows = len(df)
-    dup_mask = df.duplicated(subset=['partnumber', 'site_code', 'date'], keep=False)
-    dup_count = dup_mask.sum()
-    
-    if dup_count > 0:
-        print(f"ℹ️  Detected {dup_count} duplicate rows (same date+partnumber+site_code)")
-        print(f"   These will be aggregated by summing demand_qty")
-        # Show sample duplicates
-        if dup_count <= 10:
-            sample_dups = df[dup_mask].head(10)
-            for idx, row in sample_dups.iterrows():
-                print(f"   - {row['date']} | {row['partnumber']} | {row['site_code']} | demand={row['demand_qty']}")
-    
-    # Aggregate daily (auto-handles duplicates by summing demand_qty)
+    # Aggregate daily, complete calendar, clip outliers per series (p99) - same as notebook
     df = (df.groupby(['partnumber', 'site_code', 'date'], as_index=False)
           .agg(demand_qty=('demand_qty', 'sum')))
-    
-    aggregated_rows = len(df)
-    if original_rows != aggregated_rows:
-        print(f"✅ Aggregated {original_rows} rows → {aggregated_rows} rows (removed {original_rows - aggregated_rows} duplicates)")
-    
-    # Complete calendar
     df = complete_calendar_daily(df, group_cols=group_cols, target='demand_qty')
-    
-    # Clamp outliers using P99
-    p99 = df.groupby(list(group_cols))['demand_qty'].transform(
-        lambda s: s.quantile(0.99)
-    )
+    p99 = df.groupby(list(group_cols))['demand_qty'].transform(lambda s: s.quantile(0.99))
     df['demand_qty'] = df['demand_qty'].clip(lower=0, upper=p99)
     
     return df

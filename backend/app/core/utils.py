@@ -22,21 +22,19 @@ def _rmse(y, yhat):
         return np.sqrt(mean_squared_error(y, yhat))
 
 
-def smape(y, yhat):
-    """Symmetric Mean Absolute Percentage Error"""
-    y = np.asarray(y, float)
-    yhat = np.asarray(yhat, float)
-    d = np.abs(y) + np.abs(yhat)
-    d = np.where(d == 0, 1.0, d)
-    return np.mean(2 * np.abs(yhat - y) / d)  # 0–2; kalikan 100 untuk %
+def smape(y_true, y_pred):
+    """Symmetric Mean Absolute Percentage Error - exact same as notebook"""
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    denom = (np.abs(y_true) + np.abs(y_pred)) / 2.0
+    diff = np.abs(y_true - y_pred) / np.where(denom==0, 1.0, denom)
+    return np.mean(diff)
 
 
-def mape(y, yhat):
-    """Mean Absolute Percentage Error"""
-    y = np.asarray(y, float)
-    yhat = np.asarray(yhat, float)
-    denom = np.where(y == 0, 1.0, y)
-    return np.mean(np.abs((y - yhat) / denom))  # 0–∞; kalikan 100 untuk %
+def mape(y_true, y_pred):
+    """Mean Absolute Percentage Error - exact same as notebook"""
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    denom = np.where(np.abs(y_true) < 1e-9, 1.0, np.abs(y_true))
+    return np.mean(np.abs(y_true - y_pred) / denom)
 
 
 def wape(y_true, y_pred):
@@ -55,30 +53,25 @@ def mase(y_true, y_pred, insample):
 
 
 def metrics(y, yhat, as_percent=False):
-    """Calculate all metrics"""
-    m = dict(
-        MAE=mean_absolute_error(y, yhat),
-        RMSE=_rmse(y, yhat),
-        sMAPE=smape(y, yhat),
-        MAPE=mape(y, yhat)
-    )
-    if as_percent:
-        m['sMAPE'] *= 100.0
-        m['MAPE'] *= 100.0
-    return m
+    """Return exactly MAE, RMSE, sMAPE%, MAPE% - exact same as notebook"""
+    return {
+        "MAE": mean_absolute_error(y, yhat),
+        "RMSE": _rmse(y, yhat),
+        "sMAPE%": smape(y, yhat) * 100.0,  # smape 0–2  -> % (0–200)
+        "MAPE%":  mape(y, yhat)  * 100.0,  # mape  0–∞  -> %
+    }
 
 
 def eval_with_rounding(y_true, y_pred, thr=0.5):
-    """Evaluate with rounding and threshold"""
+    """Half-up rounding + threshold, same metric keys - exact same as notebook"""
     x = np.asarray(y_pred, float)
-    x = np.where(x < thr, 0, x)  # threshold -> nol
-    x = np.floor(x + 0.5)  # half-up rounding
+    x = np.where(x < thr, 0, x)       # threshold -> 0
+    x = np.floor(x + 0.5)             # half-up rounding
     return {
-        'MAE': mean_absolute_error(y_true, x),
-        'RMSE': _rmse(y_true, x),
-        'sMAPE%': smape(y_true, x) * 100,
-        'MAPE%': mape(y_true, x) * 100,
-        'WAPE%': wape(y_true, x),
+        "MAE": mean_absolute_error(y_true, x),
+        "RMSE": _rmse(y_true, x),
+        "sMAPE%": smape(y_true, x) * 100.0,
+        "MAPE%":  mape(y_true, x)  * 100.0,
     }
 
 
