@@ -32,6 +32,8 @@ app.add_middleware(
         "http://localhost:3000",  # React dev server
         "http://localhost",
         "http://localhost:80",
+        "https://forecast.motorsights.com",  # Production frontend
+        "https://api-forecast.motorsights.com",  # Production API
         "*"  # Allow all origins untuk internal network
     ],
     allow_credentials=True,
