@@ -1,4 +1,4 @@
-# Frontend Dockerfile - Multi-stage build
+# Frontend Dockerfile - Multi-stage build (Memory Optimized)
 FROM node:18-alpine as build
 
 # Accept build argument
@@ -8,17 +8,21 @@ ENV REACT_APP_API_URL=${REACT_APP_API_URL}
 # Set working directory
 WORKDIR /app
 
+# Install dependencies untuk memory optimization
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies dengan memory optimization
+RUN npm ci --only=production --no-audit --no-fund --maxsockets 1
 
 # Copy source code
 COPY public/ ./public/
 COPY src/ ./src/
 
-# Build production bundle
+# Build production bundle dengan memory optimization
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
 # Production stage with nginx
