@@ -34,11 +34,20 @@ app.add_middleware(
         "http://localhost:80",
         "https://forecast.motorsights.com",  # Production frontend
         "https://api-forecast.motorsights.com",  # Production API
+        "https://*.motorsights.com",  # All motorsights subdomains
         "*"  # Allow all origins untuk internal network
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin"
+    ],
 )
 
 
