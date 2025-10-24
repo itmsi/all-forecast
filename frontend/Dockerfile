@@ -1,5 +1,5 @@
 # Frontend Dockerfile - Multi-stage build (Memory Optimized)
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
 # Accept build argument
 ARG REACT_APP_API_URL
@@ -15,7 +15,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 
 # Install dependencies dengan memory optimization
-RUN npm ci --only=production --no-audit --no-fund --maxsockets 1
+RUN npm install --no-audit --no-fund --maxsockets 1
 
 # Copy source code
 COPY public/ ./public/
